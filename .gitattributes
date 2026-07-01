@@ -1,0 +1,3 @@
+# Normalize line endings: store text as LF in the repo, check out native.
+# Keeps the tree consistent between Windows dev and the Linux CI runner.
+* text=auto eol=lf
