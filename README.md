@@ -1,5 +1,7 @@
 # pico-db
 
+[![CI](https://github.com/Matheus5339/pico-db/actions/workflows/ci.yml/badge.svg)](https://github.com/Matheus5339/pico-db/actions/workflows/ci.yml)
+
 Um pequeno banco de dados relacional com **motor de SQL próprio**, escrito do zero
 em Python — sem ORM, sem `sqlite3`, sem gerador de parser. Ele recebe texto SQL,
 tokeniza, faz o parsing para uma AST e executa essa AST sobre uma camada de storage
@@ -24,6 +26,13 @@ alice | 30
 (1 linha)
 ```
 
+## Motivação
+
+Escrevi do zero — sem ORM, sem `sqlite3`, sem gerador de parser — para entender
+como um banco relacional funciona por dentro: como uma consulta vai do texto até um
+conjunto de resultados e por que índices deixam buscas rápidas. Usar uma biblioteca
+pronta esconderia justamente a parte que eu queria aprender.
+
 ## Começando
 
 Requer Python ≥ 3.10 e [uv](https://docs.astral.sh/uv/).
@@ -43,6 +52,32 @@ uv run --extra dev ruff check .
 ```
 
 Sem uv? `pip install -e ".[dev]"` e então `pico-db` / `pytest` funcionam igual.
+
+## Uso
+
+Além do REPL, o motor é usável como biblioteca Python. `Database.execute()` recebe
+uma instrução SQL e devolve um `ResultSet` (para `SELECT`), a contagem de linhas
+afetadas (para `INSERT` / `UPDATE` / `DELETE`) ou uma string de status (para
+`CREATE TABLE`):
+
+```python
+from picodb import Database
+
+db = Database()  # em memória; use Database.open("dados.json") para persistir em disco
+
+db.execute("CREATE TABLE users (id INT, name TEXT, age INT)")
+db.execute("INSERT INTO users VALUES (1, 'alice', 30)")
+db.execute("INSERT INTO users VALUES (2, 'bob', 25)")
+
+result = db.execute("SELECT name, age FROM users WHERE age > 26")
+print(result.columns)      # ['name', 'age']
+for row in result:         # ResultSet é iterável
+    print(row)             # ['alice', 30]
+
+# Índice hash: transforma WHERE col = valor de O(n) em O(1) em média
+db.create_index("users", "name")
+db.execute("SELECT id FROM users WHERE name = 'alice'")
+```
 
 ## O que é suportado
 
@@ -109,26 +144,26 @@ independente.
 
 ## Desempenho: o índice ajuda mesmo?
 
-`benchmarks/index_benchmark.py` constrói uma tabela e cronometra uma busca por
-igualdade com e sem um índice hash:
+`benchmarks/index_benchmark.py` constrói uma tabela e cronometra a mesma consulta
+`WHERE col = valor` com e sem um índice hash:
 
 ```bash
 uv run python benchmarks/index_benchmark.py
 ```
 
-Exemplo de execução (20.000 linhas, 1.000 buscas — seus números vão variar):
+Rodando com o padrão (50.000 linhas, 1.000 buscas por igualdade) nesta máquina:
 
-```
-linhas: 20.000  buscas: 1.000
-varredura : 13701.3 ms
-índice hash:  375.0 ms
-speedup    : ~37x
-```
+| Cenário | Tempo (1.000 buscas) |
+|---------|----------------------|
+| Sem índice (varredura O(n)) | ~36 s |
+| Com índice hash (O(1) em média) | ~1,2 s |
+| **Ganho** | **~30x mais rápido** |
 
-A diferença cresce com o tamanho da tabela: a varredura é O(n) por busca, o índice
-O(1) em média. Esse speedup é um número concreto e defensável — a razão exata pela
-qual um banco de dados real constrói índices, reproduzida a partir de primeiros
-princípios.
+Os tempos absolutos variam conforme a máquina (medi de ~30x a ~35x em execuções
+repetidas), mas a relação se mantém — e cresce com o tamanho da tabela: a varredura
+é O(n) por busca, o índice O(1) em média. É um número concreto e defensável, a razão
+exata pela qual um banco de dados real constrói índices, reproduzida a partir de
+primeiros princípios.
 
 ## Trade-offs conhecidos / o que não foi implementado
 
